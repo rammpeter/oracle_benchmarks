@@ -20,27 +20,145 @@ Each block within a particular partition is accessed exactly once by rowid.
 
 Legend  for columns of following table:
 - Compression: The compression type of the considered partitioned index
-- Access time by rowid: Avg. access time per row for table access by rowid over the first 10,000 blocks of one partition
-- Gets/row by rowid: Avg. consistent gets per row for table access by rowid over the first 10,000 blocks of one partition
-- Time/row full scan all columns: Avg. read time per row for full scan of all 134 rows/ 8 mio. records   
-- Gets/row full scan all columns: Avg. consistent gets per row for full scan of all 134 rows/ 8 mio. records
-- Time/row full scan 2 columns: Avg. read time per row for full scan of only 2 of 134 rows/ 8 mio. records
-- Gets/row full scan 2 columns: Avg. consistent gets per row for full scan of only 2 of 134 rows/ 8 mio. records
-- Time/row direct full scan all columns: Avg. read time per row for full scan with direct path read of all 134 rows/ 8 mio. records
-- Gets/row direct full scan all columns: Avg. consistent gets per row for full scan with direct path read of all 134 rows/ 8 mio. records
-- 
-- 
-- Size: Physiscal size of index after creation
-- Creation time: Time effort for CREATE INDEX
-- Access time range scan: Avg. time for accessing all partitions with filter ```Warengruppe_ID=:x AND Lgr_Bereich_ID=:y```
-- Access time unique scan: Access time for one unique scan, average over one access for each of the 2266 partitions
-- Gets/row unique scan: Avg. consistent gets per row for one unique scan, average over one access for each of the 2266 partitions
+- Size: Physiscal size of one partition with approx . 8 mio. records
+- Access by rowid: table access by rowid over the first 10,000 blocks of one partition
+  - Time: Avg. Average access time per row
+  - Gets / row: Avg. consistent gets per row
+- Full scan all columns: Full scan of all 134 rows for first 1,000,000 records of a partition   
+    - Time: Avg. Average time per row for scan and fetch
+    - Gets / row: Avg. consistent gets per row
+- Full scan 2 columns: Full scan of only 2 of 134 rows for first 1,000,000 records of a partition
+    - Time: Avg. Average time per row for scan and fetch
+    - Gets / row: Avg. consistent gets per row
+- Direct full scan all columns: Full scan with direct path read of all 134 rows for first 1,000,000 records of a partition
+    - Time: Avg. Average time per row for scan and fetch
+    - Gets / row: Avg. consistent gets per row
+- Search scan 2 columns: Nondirect full table scan without fetch of a whole partition with 8 mio. records and 2 filter columns
+  - Time: Total SQL runtime without fetch
+  - Gets: Consistent gets for the whole SQL execution
+- Search scan direct 2 columns: direct path full table scan without fetch of a whole partition with 8 mio. records and 2 filter columns
+    - Time: Total SQL runtime without fetch
+    - Gets: Consistent gets for the whole SQL execution
 
-| Compression                            | Access time by rowid | Gets/row by rowid | Time/row full scan all columns | Gets/row full scan all columns | Time/row full scan 2 columns | Gets/row full scan 2 columns | Time/row direct full scan all columns | Gets/row direct full scan all columns |
-|----------------------------------------|----------------------|-------------------|--------------------------------|--------------------------------|------------------------------|------------------------------|---------------------------------------|---------------------------------------|
-| Uncompressed                           |                      |                   |                                |                                |                              |                              |                                       |                                       |
-| ROW STORE COMPRESS ADVANCED            |                      |                   |                                |                                |                              |                              |                                       |                                       |
-| COLUMN STORE COMPRESS FOR QUERY LOW    | 0.065 ms             | 1.91              | 0.017 ms                       | 0.0131                         | 0.0005 ms                    | 0.012                        | 0.015 ms                              | 0.0032                                |
-| COLUMN STORE COMPRESS FOR QUERY HIGH   |                      |                   |                                |                                |                              |                              |                                       |                                       |
-| COLUMN STORE COMPRESS FOR ARCHIVE LOW  |                      |                   |                                |                                |                              |                              |                                       |                                       |
-| COLUMN STORE COMPRESS FOR ARCHIVE HIGH |                      |                   |                                | .                              |                              |                              |                                       |                                       |
+<table>
+    <tr>
+        <th rowspan="2">Compression</th>
+        <th rowspan="2">Size</th>
+        <th colspan="2">Access by RowID</th>
+        <th colspan="2">Full scan all columns</th>
+        <th colspan="2">Full scan 2 columns</th>
+        <th colspan="2">Direct full scan all columns</th>
+        <th colspan="2">Search scan 2 columns</th>
+        <th colspan="2">Search scan direct 2 columns</th>
+    </tr>
+    <tr>
+        <th>Time</th>
+        <th>Gets / row</th>
+        <th>Time</th>
+        <th>Gets / row</th>
+        <th>Time</th>
+        <th>Gets / row</th>
+        <th>Time</th>
+        <th>Gets / row</th>
+        <th>Time</th>
+        <th>Gets</th>
+        <th>Time</th>
+        <th>Gets</th>
+    </tr>
+    <tr>
+        <td>Uncompressed</td>
+        <td>2488 MB</td>
+        <td>0.045 ms</td>
+        <td>1</td>
+        <td>0.0016 ms</td>
+        <td>0.046</td>
+        <td>0.00069 ms</td>
+        <td>0.046</td>
+        <td>0.014 ms</td>
+        <td>0.036</td>
+        <td>1008 ms</td>
+        <td>317666</td>
+        <td>207 ms</td>
+        <td>317804</td>
+    </tr>
+    <tr>
+        <td>ROW STORE COMPRESS ADVANCED</td>
+        <td>156.4 MB</td>
+        <td>0.049 ms</td>
+        <td>1</td>
+        <td>0.017 ms</td>
+        <td>0.0122</td>
+        <td>0.0008 ms</td>
+        <td>0.0122</td>
+        <td>0.014 ms</td>
+        <td>0.0023</td>
+        <td>433 ms</td>
+        <td>19855</td>
+        <td>227 ms</td>
+        <td>20017</td>
+    </tr>
+    <tr>
+        <td>COLUMN STORE COMPRESS FOR QUERY LOW</td>
+        <td>-- MB</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+    </tr>
+    <tr>
+        <td>COLUMN STORE COMPRESS FOR QUERY HIGH</td>
+        <td>-- MB</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+    </tr>
+    <tr>
+        <td>COLUMN STORE COMPRESS FOR ARCHIVE LOW</td>
+        <td>-- MB</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+    </tr>
+    <tr>
+        <td>COLUMN STORE COMPRESS FOR ARCHIVE HIGH</td>
+        <td>-- MB</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+        <td>-- ms</td>
+        <td>--</td>
+    </tr>
+</table>

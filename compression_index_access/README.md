@@ -22,10 +22,11 @@ Legend  for columns of following table:
 - Access time unique scan: Access time for one unique scan, average over one access for each of the 2266 partitions containing data for the filter condition
 - Gets/row unique scan: Avg. consistent gets per row for one unique scan, average over one access for each of the 2266 partitions containing data for the filter condition
 
-|Compression|Column order  | Size     | Creation time | Access time range scan |Gets/row range scan| Access time unique scan | Gets/row unique scan |
-|---|---|----------|---------------|---|---|-------------------------|----------------------|
-| Uncompressed           | Datum, Warengruppe_ID, Lgr_Bereich_ID | 535.7 GB | 35 min.       |0.078 sec.|9.07| 0.03 ms| 3                    |
-| Key compression (1)    | Datum, Warengruppe_ID, Lgr_Bereich_ID | 397.4 GB |               |0.11 sec.|9.06| 0.08 ms| 3                    |
-| COMPRESS ADVANCED LOW  | Datum, Warengruppe_ID, Lgr_Bereich_ID | 381.6 GB | 27 min.       |0.08 sec.|13.59||
-| COMPRESS ADVANCED LOW  | Warengruppe_ID, Lgr_Bereich_ID, Datum | 531.6 GB | 34 min.       |0.064 sec.|9.06| 0.06 ms| 3                    |
-| COMPRESS ADVANCED HIGH | Warengruppe_ID, Lgr_Bereich_ID, Datum | 160.3 GB | 23 min.       |0.063 sec.|8.95|0.07 ms| 2.917|
+| Compression            | Column order                          | Size     | Creation time | Access time range scan | Gets/row range scan | Access time unique scan | Gets/row unique scan |
+|------------------------|---------------------------------------|----------|---------------|------------------------|---------------------|-------------------------|----------------------|
+| Uncompressed           | Datum, Warengruppe_ID, Lgr_Bereich_ID | 535.7 GB | 35 min.       | 0.078 sec.             | 9.07                | 0.03 ms                 | 3                    |
+| Key compression (1)    | Datum, Warengruppe_ID, Lgr_Bereich_ID | 397.4 GB |               | 0.11 sec.              | 9.06                | 0.08 ms                 | 3                    |
+| Key compression (1)    | Warengruppe_ID, Lgr_Bereich_ID, Datum | 605.8 GB | 37 min.       | 0.09 sec.              | 9.06                | 0.03 ms                 | 3                    |
+| COMPRESS ADVANCED LOW  | Datum, Warengruppe_ID, Lgr_Bereich_ID | 381.6 GB | 27 min.       | 0.08 sec.              | 13.59               |                         |
+| COMPRESS ADVANCED LOW  | Warengruppe_ID, Lgr_Bereich_ID, Datum | 531.6 GB | 34 min.       | 0.064 sec.             | 9.06                | 0.06 ms                 | 3                    |
+| COMPRESS ADVANCED HIGH | Warengruppe_ID, Lgr_Bereich_ID, Datum | 160.3 GB | 23 min.       | 0.063 sec.             | 8.95                | 0.07 ms                 | 2.917|
