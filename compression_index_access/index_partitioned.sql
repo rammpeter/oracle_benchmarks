@@ -27,7 +27,10 @@ DECLARE
   v_RowID_Count           NUMBER;
   v_Row_Count             NUMBER;
   v_Spent_Time            INTERVAL DAY TO SECOND := NULL;
+  TYPE Date_Table_Type IS TABLE OF DATE INDEX BY BINARY_INTEGER;
+  Date_Table              Date_Table_Type;
 BEGIN
+  -- Index range scan over all partitions of index
   LOOP
     v_Loop_Count := v_Loop_Count + 1;
     SELECT Value INTO v_Consistent_Gets_Start FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'consistent gets');
@@ -53,11 +56,52 @@ BEGIN
     EXIT WHEN v_Loop_Count > MAX_LOOPS OR v_Counted_Loop_Count >= TRIAL_COUNT; /* End if test had no disk reads */
   END LOOP;
   DBMS_OUTPUT.PUT_LINE('');
+  DBMS_OUTPUT.PUT_LINE('### Index range scan');
   DBMS_OUTPUT.PUT_LINE('Total trial count:              '||v_Loop_Count);
   DBMS_OUTPUT.PUT_LINE('Trials without disk:            '||v_Counted_Loop_Count);
   DBMS_OUTPUT.PUT_LINE('Records per trial:              '||v_Row_Count);
-  DBMS_OUTPUT.PUT_LINE('Runtime total:                  '||v_Spent_Time);
   DBMS_OUTPUT.PUT_LINE('Avg. runtime per trial:         '||(v_Spent_Time / v_Counted_Loop_Count));
-  DBMS_OUTPUT.PUT_LINE('Avg consistent gets per trial:  '||(v_Consistent_Gets / v_Counted_Loop_Count));
+  DBMS_OUTPUT.PUT_LINE('Avg consistent gets per row:    '||ROUND((v_Consistent_Gets / v_Counted_Loop_Count / v_Row_Count), 4));
+  
+  -- index unique scan for each partition of index
+  v_Consistent_Gets     := 0;
+  v_Counted_Loop_Count  := 0;
+  v_Loop_Count          := 0;
+  v_Spent_Time          := NULL;
+  SELECT Datum BULK COLLECT INTO Date_Table FROM auftrag.AU_WG_Bestand where Warengruppe_ID=10396748 and lgr_bereich_ID=1;
+  v_Row_Count := Date_Table.COUNT;
+  LOOP
+    v_Loop_Count := v_Loop_Count + 1;
+    SELECT Value INTO v_Consistent_Gets_Start FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'consistent gets');
+    SELECT Value INTO v_Physical_Reads_Start  FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'physical reads');
+    SELECT SYSTIMESTAMP INTO v_Start_Time FROM DUAL;
+
+    FOR i IN Date_Table.FIRST .. Date_Table.LAST LOOP
+      SELECT COUNT(DISTINCT RowID) INTO v_RowID_Count FROM auftrag.AU_WG_Bestand where Warengruppe_ID=10396748 and lgr_bereich_ID=1 AND Datum = Date_Table(i);
+    END LOOP;
+
+    SELECT SYSTIMESTAMP INTO v_End_Time FROM DUAL;
+    SELECT Value INTO v_Consistent_Gets_End FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'consistent gets');
+    SELECT Value INTO v_Physical_Reads_End  FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'physical reads');
+    v_Physical_Reads := v_Physical_Reads_End - v_Physical_Reads_Start;
+    IF v_Physical_Reads = 0 THEN
+      v_Consistent_Gets    := v_Consistent_Gets + v_Consistent_Gets_End - v_Consistent_Gets_Start;
+      v_Counted_Loop_Count := v_Counted_Loop_Count + 1;
+      IF v_Spent_Time IS NULL THEN
+        v_Spent_Time := v_End_Time-v_Start_Time;
+      ELSE
+        v_Spent_Time := v_Spent_Time + (v_End_Time-v_Start_Time);
+      END IF;
+    END IF;
+  
+    EXIT WHEN v_Loop_Count > MAX_LOOPS OR v_Counted_Loop_Count >= TRIAL_COUNT; /* End if test had no disk reads */
+  END LOOP;
+  DBMS_OUTPUT.PUT_LINE('');
+  DBMS_OUTPUT.PUT_LINE('### Index unique scan');
+  DBMS_OUTPUT.PUT_LINE('Total trial count:              '||v_Loop_Count);
+  DBMS_OUTPUT.PUT_LINE('Trials without disk:            '||v_Counted_Loop_Count);
+  DBMS_OUTPUT.PUT_LINE('Records per trial:              '||v_Row_Count);
+  DBMS_OUTPUT.PUT_LINE('Avg. runtime per trial:         '||(v_Spent_Time / v_Counted_Loop_Count));
+  DBMS_OUTPUT.PUT_LINE('Avg. runtime per unique scan:   '||(v_Spent_Time / (v_Counted_Loop_Count * v_Row_Count)));
   DBMS_OUTPUT.PUT_LINE('Avg consistent gets per row:    '||ROUND((v_Consistent_Gets / v_Counted_Loop_Count / v_Row_Count), 4));
 END;
