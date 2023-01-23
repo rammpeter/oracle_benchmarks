@@ -4,7 +4,7 @@
 
 SET SERVEROUTPUT ON;
 DECLARE
-  trial_count             NUMBER := 10;
+  trial_count             NUMBER := 3;
   MAX_LOOPS               CONSTANT NUMBER := 1000;
   MAX_ROWS                CONSTANT NUMBER := 10000;
   v_Consistent_Gets_Start NUMBER;
@@ -24,6 +24,61 @@ DECLARE
   v_Full_Row              auftrag.AU_WG_BESTAND%ROWTYPE;
   TYPE Number_Array_Type IS VARRAY(150) OF NUMBER;
   v_Number_Array          Number_Array_Type := Number_Array_Type(0, 0, 0, 0, 0, 0, 0, 0, 0, 0); 
+  
+  PROCEDURE Reset_Counter IS 
+  BEGIN
+    v_Consistent_Gets     := 0;
+    v_Loop_Count          := 0;
+    v_Counted_Loop_Count  := 0;
+    v_Row_Count           := 0;
+    v_Spent_Time          := NULL;
+  END Reset_Counter;
+  
+  PROCEDURE Log_Results(p_Row_Count NUMBER, p_Name VARCHAR2) IS
+  BEGIN
+    DBMS_OUTPUT.PUT_LINE('');
+    DBMS_OUTPUT.PUT_LINE('### '||p_Name);
+    DBMS_OUTPUT.PUT_LINE('Total trial count:              '||v_Loop_Count);
+    DBMS_OUTPUT.PUT_LINE('Trials without disk:            '||v_Counted_Loop_Count);
+    IF p_Row_Count IS NOT NULL THEN
+      DBMS_OUTPUT.PUT_LINE('Records per trial:              '||p_Row_Count);
+    END IF;
+    DBMS_OUTPUT.PUT_LINE('Runtime total:                  '||v_Spent_Time);
+    DBMS_OUTPUT.PUT_LINE('Avg. runtime per trial:         '||(v_Spent_Time / v_Counted_Loop_Count));
+    IF p_Row_Count IS NOT NULL THEN
+      DBMS_OUTPUT.PUT_LINE('Avg. runtime per row:           '||(v_Spent_Time / (v_Counted_Loop_Count*p_Row_Count)));
+    END IF;  
+    DBMS_OUTPUT.PUT_LINE('Avg consistent gets per trial:  '||(v_Consistent_Gets / v_Counted_Loop_Count));
+    IF p_Row_Count IS NOT NULL THEN
+      DBMS_OUTPUT.PUT_LINE('Avg consistent gets per row:    '||ROUND((v_Consistent_Gets / v_Counted_Loop_Count / p_Row_Count), 4));
+    END IF;  
+  END Log_Results;
+  
+  PROCEDURE Snap_Start IS
+  BEGIN
+    v_Row_Count           := 0;
+    v_Loop_Count := v_Loop_Count + 1;
+    SELECT Value INTO v_Consistent_Gets_Start FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'consistent gets');
+    SELECT Value INTO v_Physical_Reads_Start  FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'physical reads');
+    SELECT SYSTIMESTAMP INTO v_Start_Time FROM DUAL;
+  END Snap_Start;
+
+  PROCEDURE Snap_End(p_Wait_For_No_Phys_Read BOOLEAN DEFAULT TRUE) IS
+  BEGIN
+    SELECT SYSTIMESTAMP INTO v_End_Time FROM DUAL;
+    SELECT Value INTO v_Consistent_Gets_End FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'consistent gets');
+    SELECT Value INTO v_Physical_Reads_End  FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'physical reads');
+    v_Physical_Reads := v_Physical_Reads_End - v_Physical_Reads_Start;
+    IF v_Physical_Reads = 0 OR NOT p_Wait_For_No_Phys_Read THEN
+      v_Consistent_Gets    := v_Consistent_Gets + v_Consistent_Gets_End - v_Consistent_Gets_Start;
+      v_Counted_Loop_Count := v_Counted_Loop_Count + 1;
+      IF v_Spent_Time IS NULL THEN
+        v_Spent_Time := v_End_Time-v_Start_Time;
+      ELSE
+        v_Spent_Time := v_Spent_Time + (v_End_Time-v_Start_Time);
+      END IF;
+    END IF;
+  END Snap_End;
 BEGIN
   SELECT Row_ID BULK COLLECT INTO RowID_Table
   FROM   (
@@ -36,181 +91,76 @@ BEGIN
   WHERE  RowNum <= 10000       
   ;
 
-  -- Table access by rowid
+  Reset_Counter;
   LOOP
-    v_Loop_Count := v_Loop_Count + 1;
-    SELECT Value INTO v_Consistent_Gets_Start FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'consistent gets');
-    SELECT Value INTO v_Physical_Reads_Start  FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'physical reads');
-    SELECT SYSTIMESTAMP INTO v_Start_Time FROM DUAL;
-
+    Snap_Start;
     FOR i IN RowID_Table.FIRST .. RowID_Table.LAST LOOP
+      v_Row_Count := v_Row_Count + 1;
       SELECT * INTO v_Full_Row FROM auftrag.AU_WG_BESTAND WHERE RowID = RowID_Table(i);
     END LOOP;
-  
-    SELECT SYSTIMESTAMP INTO v_End_Time FROM DUAL;
-    SELECT Value INTO v_Consistent_Gets_End FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'consistent gets');
-    SELECT Value INTO v_Physical_Reads_End  FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'physical reads');
-    v_Physical_Reads := v_Physical_Reads_End - v_Physical_Reads_Start;
-    IF v_Physical_Reads = 0 THEN
-      v_Consistent_Gets    := v_Consistent_Gets + v_Consistent_Gets_End - v_Consistent_Gets_Start;
-      v_Counted_Loop_Count := v_Counted_Loop_Count + 1;
-      IF v_Spent_Time IS NULL THEN
-        v_Spent_Time := v_End_Time-v_Start_Time;
-      ELSE
-        v_Spent_Time := v_Spent_Time + (v_End_Time-v_Start_Time);
-      END IF;
-    END IF;
-  
+    Snap_End;
     EXIT WHEN v_Loop_Count > MAX_LOOPS OR v_Counted_Loop_Count >= trial_count; /* End if test had no disk reads */
   END LOOP;
-  DBMS_OUTPUT.PUT_LINE('');
-  DBMS_OUTPUT.PUT_LINE('### Table access by rowid');
-  DBMS_OUTPUT.PUT_LINE('Total trial count:              '||v_Loop_Count);
-  DBMS_OUTPUT.PUT_LINE('Trials without disk:            '||v_Counted_Loop_Count);
-  DBMS_OUTPUT.PUT_LINE('Records per trial:              '||MAX_ROWS);
-  DBMS_OUTPUT.PUT_LINE('Runtime total:                  '||v_Spent_Time);
-  DBMS_OUTPUT.PUT_LINE('Avg. runtime per trial:         '||(v_Spent_Time / v_Counted_Loop_Count));
-  DBMS_OUTPUT.PUT_LINE('Avg. runtime per row:           '||(v_Spent_Time / (v_Counted_Loop_Count*MAX_ROWS)));
-  DBMS_OUTPUT.PUT_LINE('Avg consistent gets per trial:  '||(v_Consistent_Gets / v_Counted_Loop_Count));
-  DBMS_OUTPUT.PUT_LINE('Avg consistent gets per row:    '||ROUND((v_Consistent_Gets / v_Counted_Loop_Count / MAX_ROWS), 4));
+  Log_Results(v_Row_Count, 'Table access by rowid');
 
-  -- Table access full for one partition with all columns
-  v_Consistent_Gets     := 0;
-  v_Loop_Count          := 0;
-  v_Counted_Loop_Count  := 0;
-  v_Row_Count           := 0;
-  trial_count           := 1;
-  v_Spent_Time          := NULL;
+  Reset_Counter;
   LOOP
-    v_Loop_Count := v_Loop_Count + 1;
-    SELECT Value INTO v_Consistent_Gets_Start FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'consistent gets');
-    SELECT Value INTO v_Physical_Reads_Start  FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'physical reads');
-    SELECT SYSTIMESTAMP INTO v_Start_Time FROM DUAL;
-
+    Snap_Start;
     /* read all columns from table, otherwise HCC is not forced to atach all blocks */ 
-    FOR Rec IN (SELECT /*+ FULL(x) */ * FROM auftrag.AU_WG_BESTAND PARTITION (SYS_P2262971)) LOOP
+    FOR Rec IN (SELECT /*+ FULL(x) */ * FROM auftrag.AU_WG_BESTAND PARTITION (SYS_P2262971) x WHERE RowNum <= 1000000) LOOP
       v_Row_Count := v_Row_Count + 1;
       v_Full_Row  := Rec;               /* force DB to really read all columns */
-    END LOOP;
-  
-    SELECT SYSTIMESTAMP INTO v_End_Time FROM DUAL;
-    SELECT Value INTO v_Consistent_Gets_End FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'consistent gets');
-    SELECT Value INTO v_Physical_Reads_End  FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'physical reads');
-    v_Physical_Reads := v_Physical_Reads_End - v_Physical_Reads_Start;
-    IF v_Physical_Reads = 0 THEN
-      v_Consistent_Gets    := v_Consistent_Gets + v_Consistent_Gets_End - v_Consistent_Gets_Start;
-      v_Counted_Loop_Count := v_Counted_Loop_Count + 1;
-      IF v_Spent_Time IS NULL THEN
-        v_Spent_Time := v_End_Time-v_Start_Time;
-      ELSE
-        v_Spent_Time := v_Spent_Time + (v_End_Time-v_Start_Time);
-      END IF;
-    END IF;
-  
+    END LOOP;  
+    Snap_End;
     EXIT WHEN v_Loop_Count > MAX_LOOPS OR v_Counted_Loop_Count >= trial_count; /* End if test had no disk reads */
   END LOOP;
-  DBMS_OUTPUT.PUT_LINE('');
-  DBMS_OUTPUT.PUT_LINE('### Table access full for one partition with all columns');
-  DBMS_OUTPUT.PUT_LINE('Total trial count:              '||v_Loop_Count);
-  DBMS_OUTPUT.PUT_LINE('Trials without disk:            '||v_Counted_Loop_Count);
-  DBMS_OUTPUT.PUT_LINE('Records per trial:              '||v_Row_Count);
-  DBMS_OUTPUT.PUT_LINE('Runtime total:                  '||v_Spent_Time);
-  DBMS_OUTPUT.PUT_LINE('Avg. runtime per trial:         '||(v_Spent_Time / v_Counted_Loop_Count));
-  DBMS_OUTPUT.PUT_LINE('Avg. runtime per row:           '||(v_Spent_Time / (v_Counted_Loop_Count*v_Row_Count)));
-  DBMS_OUTPUT.PUT_LINE('Avg consistent gets per trial:  '||(v_Consistent_Gets / v_Counted_Loop_Count));
-  DBMS_OUTPUT.PUT_LINE('Avg consistent gets per row:    '||ROUND((v_Consistent_Gets / v_Counted_Loop_Count / v_Row_Count), 4));
+  Log_Results(v_Row_Count, 'Table access full for one partition with all columns');
 
-  -- Table access full for one partition with less columns
-  v_Consistent_Gets     := 0;
-  v_Loop_Count          := 0;
-  v_Counted_Loop_Count  := 0;
-  v_Row_Count           := 0;
-  trial_count           := 1;
-  v_Spent_Time          := NULL;
+  Reset_Counter;
   LOOP
-    v_Loop_Count := v_Loop_Count + 1;
-    SELECT Value INTO v_Consistent_Gets_Start FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'consistent gets');
-    SELECT Value INTO v_Physical_Reads_Start  FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'physical reads');
-    SELECT SYSTIMESTAMP INTO v_Start_Time FROM DUAL;
-
+    Snap_Start;
     /* read all columns from table, otherwise HCC is not forced to atach all blocks */ 
-    FOR Rec IN (SELECT /*+ FULL(x) */ ARTIKEL_ORIG_ANZ, ARTPOS_ORIG_ANZ FROM auftrag.AU_WG_BESTAND PARTITION (SYS_P2262971)) LOOP
+    FOR Rec IN (SELECT /*+ FULL(x) */ ARTIKEL_ORIG_ANZ, ARTPOS_ORIG_ANZ FROM auftrag.AU_WG_BESTAND PARTITION (SYS_P2262971) x WHERE RowNum <= 1000000) LOOP
       v_Row_Count := v_Row_Count + 1;
       v_Number_Array(1)  := Rec.ARTIKEL_ORIG_ANZ;               /* force DB to really read all columns */
       v_Number_Array(2)  := Rec.ARTPOS_ORIG_ANZ;
     END LOOP;
-  
-    SELECT SYSTIMESTAMP INTO v_End_Time FROM DUAL;
-    SELECT Value INTO v_Consistent_Gets_End FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'consistent gets');
-    SELECT Value INTO v_Physical_Reads_End  FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'physical reads');
-    v_Physical_Reads := v_Physical_Reads_End - v_Physical_Reads_Start;
-    IF v_Physical_Reads = 0 THEN
-      v_Consistent_Gets    := v_Consistent_Gets + v_Consistent_Gets_End - v_Consistent_Gets_Start;
-      v_Counted_Loop_Count := v_Counted_Loop_Count + 1;
-      IF v_Spent_Time IS NULL THEN
-        v_Spent_Time := v_End_Time-v_Start_Time;
-      ELSE
-        v_Spent_Time := v_Spent_Time + (v_End_Time-v_Start_Time);
-      END IF;
-    END IF;
-  
+    Snap_End;
     EXIT WHEN v_Loop_Count > MAX_LOOPS OR v_Counted_Loop_Count >= trial_count; /* End if test had no disk reads */
   END LOOP;
-  DBMS_OUTPUT.PUT_LINE('');
-  DBMS_OUTPUT.PUT_LINE('### Table access full for one partition with less (2) columns');
-  DBMS_OUTPUT.PUT_LINE('Total trial count:              '||v_Loop_Count);
-  DBMS_OUTPUT.PUT_LINE('Trials without disk:            '||v_Counted_Loop_Count);
-  DBMS_OUTPUT.PUT_LINE('Records per trial:              '||v_Row_Count);
-  DBMS_OUTPUT.PUT_LINE('Runtime total:                  '||v_Spent_Time);
-  DBMS_OUTPUT.PUT_LINE('Avg. runtime per trial:         '||(v_Spent_Time / v_Counted_Loop_Count));
-  DBMS_OUTPUT.PUT_LINE('Avg. runtime per row:           '||(v_Spent_Time / (v_Counted_Loop_Count*v_Row_Count)));
-  DBMS_OUTPUT.PUT_LINE('Avg consistent gets per trial:  '||(v_Consistent_Gets / v_Counted_Loop_Count));
-  DBMS_OUTPUT.PUT_LINE('Avg consistent gets per row:    '||ROUND((v_Consistent_Gets / v_Counted_Loop_Count / v_Row_Count), 4));
+  Log_Results(v_Row_Count, 'Table access full for one partition with less (2) columns');
 
-  -- Table access full for one partition with all columns and direct path read
-  v_Consistent_Gets     := 0;
-  v_Loop_Count          := 0;
-  v_Counted_Loop_Count  := 0;
-  v_Row_Count           := 0;
-  trial_count           := 1;
-  v_Spent_Time          := NULL;
+  Reset_Counter;
   LOOP
-    v_Loop_Count := v_Loop_Count + 1;
-    SELECT Value INTO v_Consistent_Gets_Start FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'consistent gets');
-    SELECT Value INTO v_Physical_Reads_Start  FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'physical reads');
-    SELECT SYSTIMESTAMP INTO v_Start_Time FROM DUAL;
-
+    Snap_Start;
     /* read all columns from table, otherwise HCC is not forced to atach all blocks */ 
-    FOR Rec IN (SELECT /*+ FULL(x) PARALLEL(2) */ * FROM auftrag.AU_WG_BESTAND PARTITION (SYS_P2262971)) LOOP
+    FOR Rec IN (SELECT /*+ FULL(x) PARALLEL(2) */ * FROM auftrag.AU_WG_BESTAND PARTITION (SYS_P2262971) x WHERE RowNum <= 1000000) LOOP
       v_Row_Count := v_Row_Count + 1;
       v_Full_Row  := Rec;               /* force DB to really read all columns */
     END LOOP;
-  
-    SELECT SYSTIMESTAMP INTO v_End_Time FROM DUAL;
-    SELECT Value INTO v_Consistent_Gets_End FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'consistent gets');
-    SELECT Value INTO v_Physical_Reads_End  FROM v$MyStat s WHERE s.Statistic# = (SELECT Statistic# FROM v$StatName WHERE Name = 'physical reads');
-    v_Physical_Reads := v_Physical_Reads_End - v_Physical_Reads_Start;
-    IF v_Physical_Reads = 0 THEN
-      v_Consistent_Gets    := v_Consistent_Gets + v_Consistent_Gets_End - v_Consistent_Gets_Start;
-      v_Counted_Loop_Count := v_Counted_Loop_Count + 1;
-      IF v_Spent_Time IS NULL THEN
-        v_Spent_Time := v_End_Time-v_Start_Time;
-      ELSE
-        v_Spent_Time := v_Spent_Time + (v_End_Time-v_Start_Time);
-      END IF;
-    END IF;
-  
+    Snap_End(FALSE);
     EXIT WHEN v_Loop_Count > MAX_LOOPS OR v_Counted_Loop_Count >= trial_count; /* End if test had no disk reads */
   END LOOP;
-  DBMS_OUTPUT.PUT_LINE('');
-  DBMS_OUTPUT.PUT_LINE('### Table access full for one partition with all columns and direct path read');
-  DBMS_OUTPUT.PUT_LINE('Total trial count:              '||v_Loop_Count);
-  DBMS_OUTPUT.PUT_LINE('Trials without disk:            '||v_Counted_Loop_Count);
-  DBMS_OUTPUT.PUT_LINE('Records per trial:              '||v_Row_Count);
-  DBMS_OUTPUT.PUT_LINE('Runtime total:                  '||v_Spent_Time);
-  DBMS_OUTPUT.PUT_LINE('Avg. runtime per trial:         '||(v_Spent_Time / v_Counted_Loop_Count));
-  DBMS_OUTPUT.PUT_LINE('Avg. runtime per row:           '||(v_Spent_Time / (v_Counted_Loop_Count*v_Row_Count)));
-  DBMS_OUTPUT.PUT_LINE('Avg consistent gets per trial:  '||(v_Consistent_Gets / v_Counted_Loop_Count));
-  DBMS_OUTPUT.PUT_LINE('Avg consistent gets per row:    '||ROUND((v_Consistent_Gets / v_Counted_Loop_Count / v_Row_Count), 4));
+  Log_Results(v_Row_Count, 'Table access full for one partition with all columns and direct path read');
+
+  Reset_Counter;
+  LOOP
+    Snap_Start;
+    SELECT /*+ FULL(x) */ COUNT(*) INTO v_Row_Count FROM auftrag.AU_WG_BESTAND PARTITION (SYS_P2262971) x
+    WHERE  Prom_anz = 55 AND PromPos_Anz = 55; /* 2 subsequent columns */ 
+    Snap_End;
+    EXIT WHEN v_Loop_Count > MAX_LOOPS OR v_Counted_Loop_Count >= trial_count; /* End if test had no disk reads */
+  END LOOP;
+  Log_Results(NULL, 'Table access full nondirect with with 2 filter columns without fetch');
+
+  Reset_Counter;
+  LOOP
+    Snap_Start;
+    SELECT /*+ FULL(x) PARALLEL(2) */ COUNT(*) INTO v_Row_Count FROM auftrag.AU_WG_BESTAND PARTITION (SYS_P2262971) x
+    WHERE  Prom_anz = 55 AND PromPos_Anz = 55; /* 2 subsequent columns */ 
+    Snap_End(FALSE);
+    EXIT WHEN v_Loop_Count > MAX_LOOPS OR v_Counted_Loop_Count >= trial_count; /* End if test had no disk reads */
+  END LOOP;
+  Log_Results(NULL, 'Table access full direct path read with with 2 filter columns without fetch');
 
 END;
