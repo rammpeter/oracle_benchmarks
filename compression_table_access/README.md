@@ -17,7 +17,7 @@ Test was run on a table with approx. 18 billion rows, partitioned by column ```D
 
 Machine: EXADATA X6-2L High Capacity with 3 storage cell server
 
-Only cache hits without disk access are counted to ensure reproducable results.
+Only 100% cache hits without disk access are counted for non-direct access to ensure reproducable results.
 
 Each block within a particular partition is accessed exactly once by rowid.
 
