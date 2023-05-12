@@ -44,18 +44,22 @@ DECLARE
     DBMS_OUTPUT.PUT_LINE('### '||p_Name);
     DBMS_OUTPUT.PUT_LINE('Total trial count:              '||v_Loop_Count);
     DBMS_OUTPUT.PUT_LINE('Trials without disk:            '||v_Counted_Loop_Count);
-    IF p_Row_Count IS NOT NULL THEN
-      DBMS_OUTPUT.PUT_LINE('Records per trial:              '||p_Row_Count);
+    IF v_Counted_Loop_Count = 0 THEN
+      DBMS_OUTPUT.PUT_LINE('No trial without disk access, no results available');
+    ELSE
+      IF p_Row_Count IS NOT NULL THEN
+        DBMS_OUTPUT.PUT_LINE('Records per trial:              '||p_Row_Count);
+      END IF;
+      DBMS_OUTPUT.PUT_LINE('Avg. runtime per trial:         '||(v_Spent_Time / v_Counted_Loop_Count));
+      DBMS_OUTPUT.PUT_LINE('CPU seconds per trial:          '||ROUND((v_CPU / 100.0 / v_Counted_Loop_Count), 4));
+      IF p_Row_Count IS NOT NULL THEN
+        DBMS_OUTPUT.PUT_LINE('Avg. runtime per row:           '||(v_Spent_Time / (v_Counted_Loop_Count*p_Row_Count)));
+      END IF;
+      DBMS_OUTPUT.PUT_LINE('Avg consistent gets per trial:  '||(v_Consistent_Gets / v_Counted_Loop_Count));
+      IF p_Row_Count IS NOT NULL THEN
+        DBMS_OUTPUT.PUT_LINE('Avg consistent gets per row:    '||ROUND((v_Consistent_Gets / v_Counted_Loop_Count / p_Row_Count), 4));
+      END IF;
     END IF;
-    DBMS_OUTPUT.PUT_LINE('Avg. runtime per trial:         '||(v_Spent_Time / v_Counted_Loop_Count));
-    DBMS_OUTPUT.PUT_LINE('CPU seconds per trial:          '||ROUND((v_CPU / 100.0 / v_Counted_Loop_Count), 4));
-    IF p_Row_Count IS NOT NULL THEN
-      DBMS_OUTPUT.PUT_LINE('Avg. runtime per row:           '||(v_Spent_Time / (v_Counted_Loop_Count*p_Row_Count)));
-    END IF;  
-    DBMS_OUTPUT.PUT_LINE('Avg consistent gets per trial:  '||(v_Consistent_Gets / v_Counted_Loop_Count));
-    IF p_Row_Count IS NOT NULL THEN
-      DBMS_OUTPUT.PUT_LINE('Avg consistent gets per row:    '||ROUND((v_Consistent_Gets / v_Counted_Loop_Count / p_Row_Count), 4));
-    END IF;  
   END Log_Results;
   
   PROCEDURE Snap_Start IS
