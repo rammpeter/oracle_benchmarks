@@ -159,7 +159,8 @@ BEGIN
   LOOP
     Snap_Start;
     SELECT /*+ FULL(x) */ COUNT(*) INTO v_Row_Count FROM auftrag.AU_WG_BESTAND PARTITION (SYS_P436098) x
-    WHERE  Prom_anz = 55 AND PromPos_Anz = 55; /* 2 subsequent columns */ 
+    WHERE RowNum <= 10000000 /* ensure that nondirect path via DB-cache is used */
+    AND   Prom_anz = 55 AND PromPos_Anz = 55; /* 2 subsequent columns */
     Snap_End;
     EXIT WHEN v_Loop_Count > MAX_LOOPS OR v_Counted_Loop_Count >= trial_count; /* End if test had no disk reads */
   END LOOP;
