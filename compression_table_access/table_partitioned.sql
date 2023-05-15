@@ -119,7 +119,8 @@ BEGIN
   LOOP
     Snap_Start;
     /* read all columns from table, otherwise HCC is not forced to atach all blocks */ 
-    FOR Rec IN (SELECT /*+ FULL(x) */ * FROM auftrag.AU_WG_BESTAND PARTITION (SYS_P436098) x WHERE RowNum <= 1000000) LOOP
+    /* ensure that nondirect path via DB-cache is used on Exadata by disable cell offloading*/
+    FOR Rec IN (SELECT /*+ FULL(x) OPT_PARAM('cell_offload_processing' 'false')  */ * FROM auftrag.AU_WG_BESTAND PARTITION (SYS_P436098) x WHERE RowNum <= 1000000) LOOP
       v_Row_Count := v_Row_Count + 1;
       v_Full_Row  := Rec;               /* force DB to really read all columns */
     END LOOP;  
@@ -133,7 +134,7 @@ BEGIN
     Snap_Start;
     /* read all columns from table, otherwise HCC is not forced to attach all blocks */
     /* ensure that nondirect path via DB-cache is used on Exadata by disable cell offloading*/
-    FOR Rec IN (SELECT /*+ FULL(x) OPT_PARAM('cell_offload_processing' 'false') */ ARTIKEL_ORIG_ANZ, ARTPOS_ORIG_ANZ FROM auftrag.AU_WG_BESTAND PARTITION (SYS_P436098) x) LOOP
+    FOR Rec IN (SELECT /*+ FULL(x) OPT_PARAM('cell_offload_processing' 'false') */ ARTIKEL_ORIG_ANZ, ARTPOS_ORIG_ANZ FROM auftrag.AU_WG_BESTAND PARTITION (SYS_P436098) x WHERE RowNum <= 1000000) LOOP
       v_Row_Count := v_Row_Count + 1;
       v_Number_Array(1)  := Rec.ARTIKEL_ORIG_ANZ;               /* force DB to really read all columns */
       v_Number_Array(2)  := Rec.ARTPOS_ORIG_ANZ;
