@@ -28,7 +28,19 @@ DECLARE
   TYPE Number_Array_Type IS VARRAY(150) OF NUMBER;
   v_Number_Array          Number_Array_Type := Number_Array_Type(0, 0, 0, 0, 0, 0, 0, 0, 0, 0); 
   
-  PROCEDURE Reset_Counter IS 
+  -- Ensure that the table/partition is considered as small table, so that buffer cache scans are used
+  PROCEDURE Consider_as_small_table IS
+  BEGIN
+  EXECUTE IMMEDIATE 'ALTER SESSION SET "_small_table_threshold" = 1000000';
+  END Consider_as_small_table;
+
+  -- Ensure that the table/partition is considered as large table, so that direct path reads are used
+  PROCEDURE Consider_as_large_table IS
+  BEGIN
+  EXECUTE IMMEDIATE 'ALTER SESSION SET "_small_table_threshold" = 5000';
+  END Consider_as_large_table;
+
+  PROCEDURE Reset_Counter(Small_Table BOOLEAN) IS
   BEGIN
     v_Consistent_Gets     := 0;
     v_Loop_Count          := 0;
@@ -36,8 +48,13 @@ DECLARE
     v_Row_Count           := 0;
     v_CPU                 := 0;
     v_Spent_Time          := NULL;
+    IF Small_Table THEN
+      Consider_as_small_table;
+    ELSE
+      Consider_as_large_table;
+    END IF;
   END Reset_Counter;
-  
+
   PROCEDURE Log_Results(p_Row_Count NUMBER, p_Name VARCHAR2) IS
   BEGIN
     DBMS_OUTPUT.PUT_LINE('');
@@ -88,6 +105,7 @@ DECLARE
       ELSE
         v_Spent_Time := v_Spent_Time + (v_End_Time-v_Start_Time);
       END IF;
+      -- TODO: Log ASH wait events for the session between start and end
     END IF;
   END Snap_End;
 BEGIN
@@ -103,7 +121,7 @@ BEGIN
   ;
 
 
-  Reset_Counter;
+  Reset_Counter(Small_Table => TRUE);
   LOOP
     Snap_Start;
     FOR i IN RowID_Table.FIRST .. RowID_Table.LAST LOOP
@@ -115,7 +133,7 @@ BEGIN
   END LOOP;
   Log_Results(v_Row_Count, 'Table access by rowid (100% cache hits)');
 
-  Reset_Counter;
+  Reset_Counter(Small_Table => TRUE);
   LOOP
     Snap_Start;
     /* read all columns from table, otherwise HCC is not forced to atach all blocks */ 
@@ -129,7 +147,7 @@ BEGIN
   END LOOP;
   Log_Results(v_Row_Count, 'Table access full for one partition with all columns (100% cache hits)');
 
-  Reset_Counter;
+  Reset_Counter(Small_Table => TRUE);
   LOOP
     Snap_Start;
     /* read all columns from table, otherwise HCC is not forced to attach all blocks */
@@ -144,7 +162,7 @@ BEGIN
   END LOOP;
   Log_Results(v_Row_Count, 'Table access full for one partition with less (2) columns (100% cache hits)');
 
-  Reset_Counter;
+  Reset_Counter(Small_Table => FALSE);
   LOOP
     Snap_Start;
     /* read all columns from table, otherwise HCC is not forced to atach all blocks */ 
@@ -157,7 +175,7 @@ BEGIN
   END LOOP;
   Log_Results(v_Row_Count, 'Table access full for one partition with all columns and direct path read');
 
-  Reset_Counter;
+  Reset_Counter(Small_Table => TRUE);
   LOOP
     Snap_Start;
     /* ensure that nondirect path via DB-cache is used on Exadata by disable cell offloading*/
@@ -168,7 +186,7 @@ BEGIN
   END LOOP;
   Log_Results(NULL, 'Table access full nondirect with with 2 filter columns without fetch (100% cache hits)');
 
-  Reset_Counter;
+  Reset_Counter(Small_Table => FALSE);
   LOOP
     Snap_Start;
     SELECT /*+ FULL(x) PARALLEL(2) */ COUNT(*) INTO v_Row_Count FROM auftrag.AU_WG_BESTAND PARTITION (SYS_P436098) x
