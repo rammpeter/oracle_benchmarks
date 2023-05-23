@@ -34,7 +34,7 @@ DECLARE
   EXECUTE IMMEDIATE 'ALTER SESSION SET "_small_table_threshold" = 1000000';
   END Consider_as_small_table;
 
-  -- Ensure that the table/partition is considered as large table, so that direct path reads are used
+    -- Ensure that the table/partition is considered as large table, so that direct path reads are used
   PROCEDURE Consider_as_large_table IS
   BEGIN
   EXECUTE IMMEDIATE 'ALTER SESSION SET "_small_table_threshold" = 5000';
